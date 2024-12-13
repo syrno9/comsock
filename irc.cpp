@@ -27,6 +27,12 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
         "    selection-color: #FFFFFF; "
         "    border: 1px solid #555555; "
         "} "
+        "QMenuBar { "
+        "    font-family: '%1'; "
+        "    font-weight: bold; "
+        "    font-size: 14px; "
+        "    background-color: #3C3C3C; "
+        "} "
         "QMenuBar { background-color: #3C3C3C; } "
         "QMenuBar::item { background: transparent; } "
         "QMenuBar::item:selected { background: #555555; } "
@@ -52,10 +58,22 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     mainLayout->setMenuBar(menuBar);
 
     QHBoxLayout *chatLayout = new QHBoxLayout();
+    
+    QWidget *channelWidget = new QListWidget(this);
+    channelWidget->setFixedWidth(100);
+    chatLayout->addWidget(channelWidget);
+    
+    QVBoxLayout *messageLayout = new QVBoxLayout();
     messageDisplay = new QTextEdit(this);
     messageDisplay->setReadOnly(true);
     messageDisplay->setFont(mainFont);
-    chatLayout->addWidget(messageDisplay);
+    messageLayout->addWidget(messageDisplay);
+
+    messageInput = new QLineEdit(this);
+    messageInput->setPlaceholderText("Type a message...");
+    messageInput->setFont(mainFont);
+    messageLayout->addWidget(messageInput);
+    chatLayout->addLayout(messageLayout);
 
     userList = new QListWidget(this);
     userList->setFixedWidth(100);
@@ -64,12 +82,6 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     chatLayout->addWidget(userList);
 
     mainLayout->addLayout(chatLayout);
-
-    messageInput = new QLineEdit(this);
-    messageInput->setPlaceholderText("Type a message...");
-    messageInput->setFont(mainFont);
-    mainLayout->addWidget(messageInput);
-
     connect(messageInput, &QLineEdit::returnPressed, this, &ComSock::sendMessage);
 
     socket = new QTcpSocket(this);
