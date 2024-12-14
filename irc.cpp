@@ -6,8 +6,11 @@
 #include <QDialog>
 #include <QFontDatabase>
 #include <QApplication>
+#include <QMap>
 
 ComSock::ComSock(QWidget *parent) : QWidget(parent) {
+    mainLayout = new QVBoxLayout(this);
+
     int fontId = QFontDatabase::addApplicationFont("./TerminusTTF-4.49.3.ttf");
     QString fontFamily = QFontDatabase::applicationFontFamilies(fontId).at(0);
     QFont mainFont(fontFamily, 14);
@@ -20,7 +23,7 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     qApp->setStyleSheet(QString(
         "* { "
         "    font-family: '%1'; "
-        "    font-size: 13px; "
+        "    font-size: 18px; "
         "    color: #FFFFFF; "
         "    background-color: #2B2B2B; "
         "    selection-background-color: #555555; "
@@ -30,7 +33,7 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
         "QMenuBar { "
         "    font-family: '%1'; "
         "    font-weight: bold; "
-        "    font-size: 14px; "
+        "    font-size: 18px; "
         "    background-color: #3C3C3C; "
         "} "
         "QMenuBar { background-color: #3C3C3C; } "
@@ -45,7 +48,6 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
         "QListWidget { background-color: #3C3C3C; } "
     ).arg(fontFamily));
 
-    QVBoxLayout *mainLayout = new QVBoxLayout(this);
     menuBar = new QMenuBar(this);
     QMenu *fileMenu = menuBar->addMenu("ComSock");
     QMenu *helpMenu = menuBar->addMenu("Help");
@@ -59,15 +61,21 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
 
     QHBoxLayout *chatLayout = new QHBoxLayout();
     
-    QWidget *channelWidget = new QListWidget(this);
-    channelWidget->setFixedWidth(100);
-    chatLayout->addWidget(channelWidget);
+    channelList = new QListWidget(this);
+    channelList->setFixedWidth(100);
+    chatLayout->addWidget(channelList);
     
     QVBoxLayout *messageLayout = new QVBoxLayout();
+
+    messageStack = new QStackedWidget(this);
     messageDisplay = new QTextEdit(this);
     messageDisplay->setReadOnly(true);
     messageDisplay->setFont(mainFont);
-    messageLayout->addWidget(messageDisplay);
+
+    messageStack->addWidget(messageDisplay);
+    messageLayout->addWidget(messageStack);
+
+    channelDisplays[""] = messageDisplay;
 
     messageInput = new QLineEdit(this);
     messageInput->setPlaceholderText("Type a message...");
@@ -86,6 +94,10 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
 
     socket = new QTcpSocket(this);
     connect(socket, &QTcpSocket::readyRead, this, &ComSock::readMessage);
+
+    connect(channelList, &QListWidget::itemClicked, this, &ComSock::switchChannel);
+
+    setLayout(mainLayout);
 }
 
 void ComSock::connectToServer() {
@@ -121,6 +133,24 @@ void ComSock::sendMessage() {
         if (command == "/join" && commandParts.size() > 1) {
             QString channel = commandParts[1];
             currentChannel = channel;
+
+            if (!channelList->findItems(channel, Qt::MatchExactly).isEmpty()) {
+                messageDisplay->append("Already in channel: " + channel);
+                messageInput->clear();
+                return;
+            }
+            channelList->addItem(channel);
+
+            QTextEdit *channelTextEdit = new QTextEdit(this);
+            channelTextEdit->setReadOnly(true);
+            channelTextEdit->setFont(messageDisplay->font());
+            channelTextEdit->setStyleSheet(messageDisplay->styleSheet());
+
+            channelDisplays[channel] = channelTextEdit;
+            messageStack->addWidget(channelTextEdit);
+
+            messageStack->setCurrentWidget(channelTextEdit);
+
             socket->write(QString("JOIN %1\r\n").arg(channel).toUtf8());
             messageInput->clear();
             return;
@@ -145,8 +175,13 @@ void ComSock::sendMessage() {
             messageDisplay->append("You must join a channel before sending messages.");
             return;
         }
-        QString chatMessage = QString("<%1> %2").arg(nicknameInput->text(), message);
-        messageDisplay->append(chatMessage);
+        
+        QTextEdit *currentDisplay = channelDisplays[currentChannel];
+        if (currentDisplay) {
+            QString chatMessage = QString("<%1> %2").arg(nicknameInput->text(), message);
+            currentDisplay->append(chatMessage);
+        }
+        
         QString ircMessage = QString("PRIVMSG %1 :%2\r\n").arg(currentChannel, message);
         socket->write(ircMessage.toUtf8());
         messageInput->clear();
@@ -157,6 +192,9 @@ void ComSock::readMessage() {
     while (socket->canReadLine()) {
         QString line = QString::fromUtf8(socket->readLine()).trimmed();
         qDebug() << "Server message:" << line;
+
+        messageDisplay->append(line);
+
         if (line.startsWith("PING")) {
             QString pingResponse = line.mid(5); 
             socket->write(QString("PONG %1\r\n").arg(pingResponse).toUtf8());
@@ -174,7 +212,13 @@ void ComSock::readMessage() {
                 QString senderInfo = parts[0];
                 QString message = parts[1];
                 QString senderNickname = senderInfo.split("!")[0].mid(1);
-                messageDisplay->append(QString("<%1> %2").arg(senderNickname, message));
+                
+                if (!currentChannel.isEmpty() && line.contains(QString("PRIVMSG %1").arg(currentChannel))) {
+                    QTextEdit *currentDisplay = channelDisplays[currentChannel];
+                    if (currentDisplay) {
+                        currentDisplay->append(QString("<%1> %2").arg(senderNickname, message));
+                    }
+                }
             }
         }
     }
@@ -211,4 +255,21 @@ void ComSock::connectDialog() {
 
 void ComSock::about() {
     QMessageBox::about(this, "About ComSock", "This is a simple IRC client.");
+}
+
+void ComSock::switchChannel(QListWidgetItem *item) {
+    QString channel = item->text();
+    if (channelDisplays.contains(channel)) {
+        currentChannel = channel;
+        messageStack->setCurrentWidget(channelDisplays[channel]);
+        
+        updateUserListForChannel(channel);
+    }
+}
+
+void ComSock::updateUserListForChannel(const QString &channel) {
+    userList->clear();
+
+    QString request = QString("NAMES %1\r\n").arg(channel);
+    socket->write(request.toUtf8());
 }
