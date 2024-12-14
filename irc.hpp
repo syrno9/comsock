@@ -8,6 +8,10 @@
 #include <QTcpSocket>
 #include <QListWidget>
 #include <QMenuBar>
+#include <QTabWidget>
+#include <QMap>
+#include <QVBoxLayout>
+#include <QStackedWidget>
 
 class ComSock : public QWidget {
     Q_OBJECT
@@ -22,6 +26,8 @@ private slots:
     void updateUserList(const QStringList &users);
     void about();
     void connectDialog();
+    void switchChannel(QListWidgetItem *item);
+    void updateUserListForChannel(const QString &channel);
 
 private:
     QLineEdit *serverInput;
@@ -30,8 +36,12 @@ private:
     QLineEdit *messageInput;
     QTcpSocket *socket;
     QListWidget *userList;
+    QListWidget *channelList;
     QString currentChannel;
     QMenuBar *menuBar;
+    QMap<QString, QTextEdit*> channelDisplays;
+    QVBoxLayout *mainLayout;
+    QStackedWidget *messageStack;
 };
 
 #endif 
