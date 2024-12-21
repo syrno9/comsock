@@ -13,6 +13,7 @@
 
 ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     auto mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
     
     auto fontId = QFontDatabase::addApplicationFont("./TerminusTTF-4.49.3.ttf");
     auto boldFontId = QFontDatabase::addApplicationFont("./TerminusTTF-Bold-4.49.3.ttf");
@@ -33,50 +34,59 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     ).arg(fontFamily));
 
     menuBar = new QMenuBar(this);
+    menuBar->setNativeMenuBar(false);
     auto fileMenu = menuBar->addMenu("ComSock");
     auto helpMenu = menuBar->addMenu("Help");
     connect(fileMenu->addAction("Connect"), &QAction::triggered, this, &ComSock::connectDialog);
     connect(fileMenu->addAction("Exit"), &QAction::triggered, this, &QWidget::close);
     connect(helpMenu->addAction("About"), &QAction::triggered, this, &ComSock::about);
-    mainLayout->setMenuBar(menuBar);
+    mainLayout->addWidget(menuBar);
 
     // Main Layout
     auto chatLayout = new QHBoxLayout();
+    mainLayout->addLayout(chatLayout);
     
     channelList = new QListWidget(this);
     channelList->setFixedWidth(100);
     
     auto messageLayout = new QVBoxLayout();
-    messageStack = new QStackedWidget(this);
+    
+    channelTabs = new QTabWidget(this);
+    channelTabs->setTabPosition(QTabWidget::North);
+    channelTabs->setDocumentMode(true);
+    
     messageDisplay = new QTextEdit(this);
     messageDisplay->setReadOnly(true);
     messageDisplay->setFont(QFont(fontFamily, 14));
     messageDisplay->setAcceptRichText(true);
     
-    messageStack->addWidget(messageDisplay);
-    
-    // Create server channel in the list
     QString serverChannel = "irc.rizon.net";
     channelList->addItem(serverChannel);
     channelDisplays[serverChannel] = messageDisplay;
+    channelTabs->addTab(messageDisplay, serverChannel);
     currentChannel = serverChannel;
-    
-    messageInput = new QLineEdit(this);
-    messageInput->setPlaceholderText("Type a message...");
-    messageInput->setFont(QFont(fontFamily, 14));
     
     userList = new QListWidget(this);
     userList->setFixedWidth(100);
     userList->setFont(QFont(boldFontFamily, 14));
     
-    messageLayout->addWidget(messageStack);
-    messageLayout->addWidget(messageInput);
+    messageLayout->addWidget(channelTabs);
+    
+    auto inputLayout = new QHBoxLayout();
+    nickDisplay = new QLabel(this);
+    nickDisplay->setFont(QFont(boldFontFamily, 14));
+    messageInput = new QLineEdit(this);
+    messageInput->setPlaceholderText("Type a message...");
+    messageInput->setFont(QFont(fontFamily, 14));
+    
+    inputLayout->addWidget(nickDisplay);
+    inputLayout->addWidget(messageInput);
+    
+    messageLayout->addLayout(inputLayout);
     
     chatLayout->addWidget(channelList);
     chatLayout->addLayout(messageLayout);
     chatLayout->addWidget(userList);
-    
-    mainLayout->addLayout(chatLayout);
 
     // set connections
     socket = new QTcpSocket(this);
@@ -86,6 +96,9 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
 
     // show connect dialog on startup
     QTimer::singleShot(0, this, &ComSock::connectDialog);
+
+    // Add connection for tab changes
+    connect(channelTabs, &QTabWidget::currentChanged, this, &ComSock::handleTabChange);
 }
 
 void ComSock::connectToServer() {
@@ -138,12 +151,14 @@ void ComSock::sendMessage() {
                 channelTextEdit->setFont(messageDisplay->font());
                 channelTextEdit->setAcceptRichText(true);
                 channelDisplays[currentChannel] = channelTextEdit;
-                messageStack->addWidget(channelTextEdit);
-                messageStack->setCurrentWidget(channelTextEdit);
+                // Add new tab for the channel
+                channelTabs->addTab(channelTextEdit, currentChannel);
+                channelTabs->setCurrentWidget(channelTextEdit);
                 socket->write(QString("JOIN %1\r\n").arg(currentChannel).toUtf8());
             }
         } else if (parts[0] == "/nick" && parts.size() > 1) {
             socket->write(QString("NICK %1\r\n").arg(parts[1]).toUtf8());
+            nickDisplay->setText(parts[1]);  // Update nickname display
         } else {
             messageDisplay->append("Unknown command: " + message);
         }
@@ -345,6 +360,9 @@ void ComSock::connectDialog() {
         alternativeNicks << nickname2Input->text() << nickname3Input->text();
         username = usernameInput->text();
         
+        // Update nickname display
+        nickDisplay->setText(nicknameInput->text());
+        
         // make sure network is selected
         if (auto item = networkList->currentItem()) {
             socket->connectToHost(item->text(), 6667);
@@ -373,13 +391,20 @@ void ComSock::connectDialog() {
 void ComSock::switchChannel(QListWidgetItem *item) {
     if (channelDisplays.contains(item->text())) {
         currentChannel = item->text();
-        messageStack->setCurrentWidget(channelDisplays[currentChannel]);
+        
+        // Find and set the correct tab
+        for (int i = 0; i < channelTabs->count(); i++) {
+            if (channelTabs->tabText(i) == currentChannel) {
+                channelTabs->setCurrentIndex(i);
+                break;
+            }
+        }
         
         // Only update user list for actual channels, not server
         if (item->text() != networkList->currentItem()->text()) {
             updateUserListForChannel(currentChannel);
         } else {
-            userList->clear();  // Clear user list when viewing server messages
+            userList->clear();
         }
     }
 }
@@ -392,4 +417,14 @@ void ComSock::updateUserList(const QStringList &users) {
 void ComSock::updateUserListForChannel(const QString &channel) {
     userList->clear();
     socket->write(QString("NAMES %1\r\n").arg(channel).toUtf8());
+}
+
+// Add new method to handle tab changes
+void ComSock::handleTabChange(int index) {
+    QString channelName = channelTabs->tabText(index);
+    auto items = channelList->findItems(channelName, Qt::MatchExactly);
+    if (!items.isEmpty()) {
+        channelList->setCurrentItem(items.first());
+        switchChannel(items.first());
+    }
 }

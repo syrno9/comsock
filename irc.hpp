@@ -13,6 +13,8 @@
 #include <QPushButton>
 #include <QDateTime>
 #include <QTimer>
+#include <QTabWidget>
+#include <QLabel>
 
 class ComSock : public QWidget {
     Q_OBJECT
@@ -29,6 +31,7 @@ private slots:
     void updateUserList(const QStringList &users);
     void updateUserListForChannel(const QString &channel);
     void about() { QMessageBox::about(this, "About ComSock", "This is a simple IRC client."); }
+    void handleTabChange(int index);
 
 private:
     QTcpSocket *socket;
@@ -42,6 +45,8 @@ private:
     QStringList alternativeNicks;
     QString username;
     QColor getUserColor(const QString &nickname);
+    QTabWidget *channelTabs;
+    QLabel *nickDisplay;
 };
 
 #endif 
