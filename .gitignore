@@ -1,0 +1,8 @@
+moc_irc.cpp
+moc_irc.o
+moc_predefs.h
+irc.o
+main.o
+Makefile
+ComSock
+.qmake.stash
