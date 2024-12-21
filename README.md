@@ -1,3 +1,4 @@
+## Communication Socket
 It's an IRC client with no features but one day I will add all the cool features
 
 ## Compiling and running
