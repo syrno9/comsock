@@ -31,12 +31,14 @@ private slots:
 private:
     QTcpSocket *socket;
     QMenuBar *menuBar;
-    QListWidget *channelList, *userList;
+    QListWidget *channelList, *userList, *networkList;
     QLineEdit *serverInput, *nicknameInput, *messageInput;
     QTextEdit *messageDisplay;
     QStackedWidget *messageStack;
     QMap<QString, QTextEdit*> channelDisplays;
     QString currentChannel;
+    QStringList alternativeNicks;
+    QString username;
 };
 
 #endif 

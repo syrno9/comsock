@@ -5,17 +5,19 @@
 #include <QDialog>
 #include <QFontDatabase>
 #include <QApplication>
+#include <QGroupBox>
+#include <QLabel>
+#include <QCheckBox>
+#include <QInputDialog>
 
 ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     auto mainLayout = new QVBoxLayout(this);
     
-    // Load fonts
     auto fontId = QFontDatabase::addApplicationFont("./TerminusTTF-4.49.3.ttf");
     auto boldFontId = QFontDatabase::addApplicationFont("./TerminusTTF-Bold-4.49.3.ttf");
     auto fontFamily = QFontDatabase::applicationFontFamilies(fontId).at(0);
     auto boldFontFamily = QFontDatabase::applicationFontFamilies(boldFontId).at(0);
     
-    // Set global stylesheet
     qApp->setStyleSheet(QString(
         "* { color: #FFFFFF; background-color: #2B2B2B; selection-background-color: #555555; "
         "selection-color: #FFFFFF; border: 1px solid #555555; font-family: '%1'; font-size: 14px; } "
@@ -29,7 +31,6 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
         "QLineEdit, QTextEdit, QListWidget { background-color: #3C3C3C; } "
     ).arg(fontFamily));
 
-    // Setup menu bar
     menuBar = new QMenuBar(this);
     auto fileMenu = menuBar->addMenu("ComSock");
     auto helpMenu = menuBar->addMenu("Help");
@@ -38,7 +39,7 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     connect(helpMenu->addAction("About"), &QAction::triggered, this, &ComSock::about);
     mainLayout->setMenuBar(menuBar);
 
-    // Setup main chat layout
+    // Main Layout
     auto chatLayout = new QHBoxLayout();
     
     channelList = new QListWidget(this);
@@ -70,7 +71,7 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     
     mainLayout->addLayout(chatLayout);
 
-    // Setup connections
+    // set connections
     socket = new QTcpSocket(this);
     connect(messageInput, &QLineEdit::returnPressed, this, &ComSock::sendMessage);
     connect(socket, &QTcpSocket::readyRead, this, &ComSock::readMessage);
@@ -88,7 +89,11 @@ void ComSock::connectToServer() {
     }
 
     auto nickname = nicknameInput->text();
-    socket->write(QString("NICK %1\r\nUSER %1 0 * :My IRC Client\r\n").arg(nickname).toUtf8());
+    // send initial nickname and alternatives if the first one fails
+    socket->write(QString("NICK %1\r\nUSER %2 0 * :My IRC Client\r\n")
+                 .arg(nickname)
+                 .arg(username.isEmpty() ? nickname : username)
+                 .toUtf8());
 }
 
 void ComSock::sendMessage() {
@@ -133,7 +138,6 @@ void ComSock::readMessage() {
     while (socket->canReadLine()) {
         auto line = QString::fromUtf8(socket->readLine()).trimmed();
         messageDisplay->append(line);
-
         if (line.startsWith("PING")) {
             socket->write(QString("PONG %1\r\n").arg(line.mid(5)).toUtf8());
         } else if (line.contains(" 353 ")) {
@@ -155,22 +159,113 @@ void ComSock::connectDialog() {
     auto dialog = new QDialog(this);
     dialog->setWindowTitle("Connect to IRC Server");
     auto layout = new QVBoxLayout(dialog);
-    
-    serverInput = new QLineEdit(dialog);
+    auto userGroup = new QGroupBox("User Information", dialog);
+    auto userLayout = new QVBoxLayout(userGroup);
     nicknameInput = new QLineEdit(dialog);
-    auto connectButton = new QPushButton("Connect", dialog);
-    
-    serverInput->setPlaceholderText("Server Address");
+    auto nickname2Input = new QLineEdit(dialog);
+    auto nickname3Input = new QLineEdit(dialog);
+    auto usernameInput = new QLineEdit(dialog);
     nicknameInput->setPlaceholderText("Nickname");
+    nickname2Input->setPlaceholderText("Second choice");
+    nickname3Input->setPlaceholderText("Third choice");
+    usernameInput->setPlaceholderText("User name");
+    userLayout->addWidget(nicknameInput);
+    userLayout->addWidget(nickname2Input);
+    userLayout->addWidget(nickname3Input);
+    userLayout->addWidget(usernameInput);
+    // networks group
+    auto networkGroup = new QGroupBox("Networks", dialog);
+    auto networkLayout = new QVBoxLayout(networkGroup);
+    networkList = new QListWidget(dialog);
+    networkList->addItem("irc.rizon.net");
+    auto buttonLayout = new QHBoxLayout();
+    auto addButton = new QPushButton("Add", dialog);
+    auto removeButton = new QPushButton("Remove", dialog);
+    auto editButton = new QPushButton("Edit...", dialog);
+    auto sortButton = new QPushButton("Sort", dialog);
+    auto favorButton = new QPushButton("Favor", dialog);
+    buttonLayout->addWidget(addButton);
+    buttonLayout->addWidget(removeButton);
+    buttonLayout->addWidget(editButton);
+    buttonLayout->addWidget(sortButton);
+    buttonLayout->addWidget(favorButton);
+    networkLayout->addWidget(networkList);
+    networkLayout->addLayout(buttonLayout);
+    // skip network list checkbox
+    auto skipNetworkCheck = new QCheckBox("Skip network list on startup", dialog);
+    auto showFavoritesCheck = new QCheckBox("Show favorites only", dialog);
     
-    layout->addWidget(serverInput);
-    layout->addWidget(nicknameInput);
-    layout->addWidget(connectButton);
+    auto connectButton = new QPushButton("Connect", dialog);
+    auto closeButton = new QPushButton("Close", dialog);
+    auto bottomButtonLayout = new QHBoxLayout();
+    bottomButtonLayout->addWidget(closeButton);
+    bottomButtonLayout->addWidget(connectButton);
     
-    connect(connectButton, &QPushButton::clicked, [this, dialog]() {
-        connectToServer();
-        dialog->accept();
+    layout->addWidget(userGroup);
+    layout->addWidget(networkGroup);
+    layout->addWidget(skipNetworkCheck);
+    layout->addWidget(showFavoritesCheck);
+    layout->addLayout(bottomButtonLayout);
+    
+    // connect signals
+    connect(addButton, &QPushButton::clicked, [this]() {
+        bool ok;
+        QString network = QInputDialog::getText(this, "Add Network",
+                                              "Enter network address:",
+                                              QLineEdit::Normal, "", &ok);
+        if (ok && !network.isEmpty()) {
+            networkList->addItem(network);
+        }
     });
+    
+    connect(removeButton, &QPushButton::clicked, [this]() {
+        delete networkList->currentItem();
+    });
+    
+    connect(editButton, &QPushButton::clicked, [this]() {
+        auto item = networkList->currentItem();
+        if (!item) return;
+        
+        bool ok;
+        QString network = QInputDialog::getText(this, "Edit Network",
+                                              "Edit network address:",
+                                              QLineEdit::Normal,
+                                              item->text(), &ok);
+        if (ok && !network.isEmpty()) {
+            item->setText(network);
+        }
+    });
+    
+    connect(sortButton, &QPushButton::clicked, [this]() {
+        networkList->sortItems();
+    });
+    
+    connect(connectButton, &QPushButton::clicked, [this, dialog, nickname2Input, nickname3Input, usernameInput]() {
+        alternativeNicks.clear();
+        alternativeNicks << nickname2Input->text() << nickname3Input->text();
+        username = usernameInput->text();
+        
+        // make sure network is selected
+        if (auto item = networkList->currentItem()) {
+            socket->connectToHost(item->text(), 6667);
+            if (!socket->waitForConnected(5000)) {
+                QMessageBox::critical(this, "Connection Error", "Could not connect to server.");
+                return;
+            }
+
+            auto nickname = nicknameInput->text();
+            socket->write(QString("NICK %1\r\nUSER %2 0 * :My IRC Client\r\n")
+                        .arg(nickname)
+                        .arg(username.isEmpty() ? nickname : username)
+                        .toUtf8());
+            
+            dialog->accept();
+        } else {
+            QMessageBox::warning(this, "Connection Error", "Please select a server from the list.");
+        }
+    });
+    
+    connect(closeButton, &QPushButton::clicked, dialog, &QDialog::reject);
     
     dialog->exec();
 }
