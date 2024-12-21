@@ -1,10 +1,5 @@
-QT += core gui network widgets
-
-# Add this line to specify the include path for Qt headers
-INCLUDEPATH += /usr/include/qt6 /usr/include/qt6/QtGui
-
-# Ensure the QtGui include path is specified
-INCLUDEPATH += /usr/include/qt6/QtGui
+QT = core gui network widgets
+CONFIG += c++17
 
 TARGET = ComSock
 TEMPLATE = app
