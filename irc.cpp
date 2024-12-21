@@ -54,7 +54,12 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     messageDisplay->setAcceptRichText(true);
     
     messageStack->addWidget(messageDisplay);
-    channelDisplays[""] = messageDisplay;
+    
+    // Create server channel in the list
+    QString serverChannel = "irc.rizon.net";
+    channelList->addItem(serverChannel);
+    channelDisplays[serverChannel] = messageDisplay;
+    currentChannel = serverChannel;
     
     messageInput = new QLineEdit(this);
     messageInput->setPlaceholderText("Type a message...");
@@ -87,14 +92,22 @@ void ComSock::connectToServer() {
     if (!socket || socket->state() == QAbstractSocket::ConnectedState || 
         socket->state() == QAbstractSocket::ConnectingState) return;
 
-    socket->connectToHost(serverInput->text(), 6667);
+    QString serverName = networkList->currentItem()->text();
+    socket->connectToHost(serverName, 6667);
     if (!socket->waitForConnected(5000)) {
         QMessageBox::critical(this, "Connection Error", "Could not connect to server.");
         return;
     }
 
+    if (channelList->item(0)->text() != serverName) {
+        channelList->item(0)->setText(serverName);
+        auto oldDisplay = channelDisplays["irc.rizon.net"];
+        channelDisplays.remove("irc.rizon.net");
+        channelDisplays[serverName] = oldDisplay;
+        currentChannel = serverName;
+    }
+
     auto nickname = nicknameInput->text();
-    // send initial nickname and alternatives if the first one fails
     socket->write(QString("NICK %1\r\nUSER %2 0 * :My IRC Client\r\n")
                  .arg(nickname)
                  .arg(username.isEmpty() ? nickname : username)
@@ -156,13 +169,18 @@ void ComSock::readMessage() {
         QDateTime timestamp = QDateTime::currentDateTime();
         QString timeStr = timestamp.toString("[hh:mm:ss] ");
         
+        // get server name for the server messages channel
+        QString serverName = networkList->currentItem()->text();
+        
         if (line.startsWith("PING")) {
             socket->write(QString("PONG %1\r\n").arg(line.mid(5)).toUtf8());
             continue;
         }
         
         if (!line.startsWith(":")) {
-            messageDisplay->append(timeStr + line);
+            if (auto display = channelDisplays[serverName]) {
+                display->append(timeStr + line);
+            }
             continue;
         }
 
@@ -221,7 +239,9 @@ void ComSock::readMessage() {
             updateUserList(line.section(':', 2).split(" ", Qt::SkipEmptyParts));
         }
         else {
-            messageDisplay->append(timeStr + line);
+            if (auto display = channelDisplays[serverName]) {
+                display->append(timeStr + line);
+            }
         }
     }
 }
@@ -354,7 +374,13 @@ void ComSock::switchChannel(QListWidgetItem *item) {
     if (channelDisplays.contains(item->text())) {
         currentChannel = item->text();
         messageStack->setCurrentWidget(channelDisplays[currentChannel]);
-        updateUserListForChannel(currentChannel);
+        
+        // Only update user list for actual channels, not server
+        if (item->text() != networkList->currentItem()->text()) {
+            updateUserListForChannel(currentChannel);
+        } else {
+            userList->clear();  // Clear user list when viewing server messages
+        }
     }
 }
 
