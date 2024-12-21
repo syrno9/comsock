@@ -4,44 +4,39 @@
 #include <QWidget>
 #include <QLineEdit>
 #include <QTextEdit>
-#include <QPushButton>
 #include <QTcpSocket>
 #include <QListWidget>
 #include <QMenuBar>
-#include <QTabWidget>
-#include <QMap>
-#include <QVBoxLayout>
 #include <QStackedWidget>
+#include <QMap>
+#include <QMessageBox>
+#include <QPushButton>
 
 class ComSock : public QWidget {
     Q_OBJECT
 
 public:
-    ComSock(QWidget *parent = nullptr);
+    explicit ComSock(QWidget *parent = nullptr);
 
 private slots:
     void connectToServer();
     void sendMessage();
     void readMessage();
-    void updateUserList(const QStringList &users);
-    void about();
     void connectDialog();
     void switchChannel(QListWidgetItem *item);
+    void updateUserList(const QStringList &users);
     void updateUserListForChannel(const QString &channel);
+    void about() { QMessageBox::about(this, "About ComSock", "This is a simple IRC client."); }
 
 private:
-    QLineEdit *serverInput;
-    QLineEdit *nicknameInput;
-    QTextEdit *messageDisplay;
-    QLineEdit *messageInput;
     QTcpSocket *socket;
-    QListWidget *userList;
-    QListWidget *channelList;
-    QString currentChannel;
     QMenuBar *menuBar;
-    QMap<QString, QTextEdit*> channelDisplays;
-    QVBoxLayout *mainLayout;
+    QListWidget *channelList, *userList;
+    QLineEdit *serverInput, *nicknameInput, *messageInput;
+    QTextEdit *messageDisplay;
     QStackedWidget *messageStack;
+    QMap<QString, QTextEdit*> channelDisplays;
+    QString currentChannel;
 };
 
 #endif 
