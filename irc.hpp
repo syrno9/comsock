@@ -11,6 +11,7 @@
 #include <QMap>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QDateTime>
 
 class ComSock : public QWidget {
     Q_OBJECT
@@ -39,6 +40,7 @@ private:
     QString currentChannel;
     QStringList alternativeNicks;
     QString username;
+    QColor getUserColor(const QString &nickname);
 };
 
 #endif 

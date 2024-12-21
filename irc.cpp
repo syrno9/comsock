@@ -50,6 +50,7 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     messageDisplay = new QTextEdit(this);
     messageDisplay->setReadOnly(true);
     messageDisplay->setFont(QFont(fontFamily, 14));
+    messageDisplay->setAcceptRichText(true);
     
     messageStack->addWidget(messageDisplay);
     channelDisplays[""] = messageDisplay;
@@ -100,6 +101,13 @@ void ComSock::sendMessage() {
     auto message = messageInput->text();
     if (message.isEmpty()) return;
     
+    QDateTime timestamp = QDateTime::currentDateTime();
+    QString timeStr = timestamp.toString("[hh:mm:ss] ");
+    QString nickname = nicknameInput->text();
+    QColor userColor = getUserColor(nickname);
+    QString coloredNick = QString("<span style='color: %1'>%2</span>")
+                        .arg(userColor.name(), nickname);
+    
     if (message.startsWith("/")) {
         auto parts = message.split(" ");
         if (parts[0] == "/join" && parts.size() > 1) {
@@ -111,6 +119,7 @@ void ComSock::sendMessage() {
                 auto channelTextEdit = new QTextEdit(this);
                 channelTextEdit->setReadOnly(true);
                 channelTextEdit->setFont(messageDisplay->font());
+                channelTextEdit->setAcceptRichText(true);
                 channelDisplays[currentChannel] = channelTextEdit;
                 messageStack->addWidget(channelTextEdit);
                 messageStack->setCurrentWidget(channelTextEdit);
@@ -123,7 +132,10 @@ void ComSock::sendMessage() {
         }
     } else if (socket->state() == QAbstractSocket::ConnectedState && !currentChannel.isEmpty()) {
         if (auto display = channelDisplays[currentChannel]) {
-            display->append(QString("<%1> %2").arg(nicknameInput->text(), message));
+            display->append(QString("%1%2 %3")
+                .arg(timeStr)
+                .arg(QString("&lt;%1&gt;").arg(coloredNick))
+                .arg(message));
             socket->write(QString("PRIVMSG %1 :%2\r\n").arg(currentChannel, message).toUtf8());
         }
     } else {
@@ -137,22 +149,86 @@ void ComSock::sendMessage() {
 void ComSock::readMessage() {
     while (socket->canReadLine()) {
         auto line = QString::fromUtf8(socket->readLine()).trimmed();
-        messageDisplay->append(line);
+        QDateTime timestamp = QDateTime::currentDateTime();
+        QString timeStr = timestamp.toString("[hh:mm:ss] ");
+        
         if (line.startsWith("PING")) {
             socket->write(QString("PONG %1\r\n").arg(line.mid(5)).toUtf8());
-        } else if (line.contains(" 353 ")) {
-            updateUserList(line.section(':', 2).split(" ", Qt::SkipEmptyParts));
-        } else if (line.startsWith(":")) {
-            auto parts = line.split(" :", Qt::SkipEmptyParts);
-            if (parts.size() > 1 && !currentChannel.isEmpty() && 
-                line.contains(QString("PRIVMSG %1").arg(currentChannel))) {
-                if (auto display = channelDisplays[currentChannel]) {
-                    display->append(QString("<%1> %2")
-                        .arg(parts[0].split("!")[0].mid(1), parts[1]));
-                }
+            continue;
+        }
+        
+        if (!line.startsWith(":")) {
+            messageDisplay->append(timeStr + line);
+            continue;
+        }
+
+        // parse IRC message stuff
+        QString prefix = line.mid(1, line.indexOf(" ") - 1);
+        QString nickname = prefix.split("!").first();
+        QString remaining = line.mid(line.indexOf(" ") + 1);
+        QString command = remaining.split(" ").first();
+        QColor userColor = getUserColor(nickname);
+        QString coloredNick = QString("<span style='color: %1'>%2</span>")
+                            .arg(userColor.name(), nickname);
+
+        if (command == "PRIVMSG") {
+            QString channel = remaining.section(" ", 1, 1);
+            QString message = remaining.section(":", 1);
+            
+            if (auto display = channelDisplays[channel]) {
+                display->append(QString("%1%2 %3")
+                    .arg(timeStr)
+                    .arg(QString("&lt;%1&gt;").arg(coloredNick))
+                    .arg(message));
             }
         }
+        else if (command == "JOIN") {
+            QString channel = remaining.section(" ", 1).remove(":");
+            if (auto display = channelDisplays[channel]) {
+                display->append(QString("%1%2 has joined %3")
+                    .arg(timeStr, coloredNick, channel));
+            }
+        }
+        else if (command == "PART" || command == "QUIT") {
+            QString channel = remaining.section(" ", 1, 1);
+            QString message = remaining.section(" :", 1);
+            if (auto display = channelDisplays[channel]) {
+                display->append(QString("%1%2 has left %3 (%4)")
+                    .arg(timeStr, coloredNick, channel, message));
+            }
+        }
+        else if (command == "TOPIC") {
+            QString channel = remaining.section(" ", 1, 1);
+            QString newTopic = remaining.section(" :", 1);
+            if (auto display = channelDisplays[channel]) {
+                display->append(QString("%1%2 changed the topic to: %3")
+                    .arg(timeStr, coloredNick, newTopic));
+            }
+        }
+        else if (command == "332") { // RPL_TOPIC
+            QString channel = remaining.section(" ", 2, 2);
+            QString topic = remaining.section(" :", 1);
+            if (auto display = channelDisplays[channel]) {
+                display->append(QString("%1Topic for %2: %3")
+                    .arg(timeStr, channel, topic));
+            }
+        }
+        else if (command == "353") { // RPL_NAMREPLY
+            updateUserList(line.section(':', 2).split(" ", Qt::SkipEmptyParts));
+        }
+        else {
+            messageDisplay->append(timeStr + line);
+        }
     }
+}
+
+QColor ComSock::getUserColor(const QString &nickname) {
+    uint hash = 0;
+    for (QChar c : nickname) {
+        hash = hash * 31 + c.unicode();
+    }
+    int hue = hash % 360;
+    return QColor::fromHsv(hue, 150, 250);
 }
 
 void ComSock::connectDialog() {
