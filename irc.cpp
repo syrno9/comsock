@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QCheckBox>
 #include <QInputDialog>
+#include <QTimer>
 
 ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     auto mainLayout = new QVBoxLayout(this);
@@ -77,6 +78,9 @@ ComSock::ComSock(QWidget *parent) : QWidget(parent) {
     connect(messageInput, &QLineEdit::returnPressed, this, &ComSock::sendMessage);
     connect(socket, &QTcpSocket::readyRead, this, &ComSock::readMessage);
     connect(channelList, &QListWidget::itemClicked, this, &ComSock::switchChannel);
+
+    // show connect dialog on startup
+    QTimer::singleShot(0, this, &ComSock::connectDialog);
 }
 
 void ComSock::connectToServer() {

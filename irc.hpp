@@ -12,6 +12,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QDateTime>
+#include <QTimer>
 
 class ComSock : public QWidget {
     Q_OBJECT
